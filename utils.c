@@ -1,10 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
-＃include "utils.h"
+#include "utils.h"
   
 int register_user(char *username) {
   // 检查用户名是否为空
