@@ -1,5 +1,5 @@
 # thdEmailServer
-a experimental email server
+an experimental email server
 
 ## Description
 
