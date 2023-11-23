@@ -19,6 +19,6 @@ unsigned char *base64_encode(unsigned char *str);
 /**BASE64解码函数**/
 unsigned char *base64_decode(unsigned char *code);
 /**用户注册**/
-int register_user(char *username) 
+int register_user(char *username); 
 
 #endif /* REGISTER_H */
