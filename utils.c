@@ -5,6 +5,7 @@
 */
 unsigned char* base64_encode(unsigned char* str)  {  
     /**变量声明*/
+    int i, j;
     size_t len;  /*目标编码长度*/
     size_t str_len;  /*原始字串长度*/
     unsigned char* res;  /*目标BASE64编码*/
@@ -20,7 +21,7 @@ unsigned char* base64_encode(unsigned char* str)  {
     res[len] = '\0';  /**为目标串分配内存，包括尾字符*/
   
     /**以3个8位字符为一组进行编码*/
-    for(int i=0, j=0; j<str_len; i+=4, j+=3)
+    for(i=0, j=0; j<str_len; i+=4, j+=3)
     {  
         res[i] = base64_table[str[j]>>2]; 
         res[i+1] = base64_table[(str[j]&0x3)<<4 | (str[j+1]>>4)]; 
@@ -108,7 +109,7 @@ int register_user(char *username) {
     return -1;
   }
   /**尝试创建文件夹**/
-  if (mkdir(path) != 0){
+  if (mkdir(path, S_IRWXU) != 0){
     perror("Error in mkdir");
     return -1;
   }
