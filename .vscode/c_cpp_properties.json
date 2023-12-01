@@ -11,6 +11,14 @@
             "compilerArgs": [
                 ""
             ]
+        },
+        {
+            "name": "gcc",
+            "includePath": [
+                "${workspaceFolder}/**"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/g++"
         }
     ],
     "version": 4
