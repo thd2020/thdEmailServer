@@ -1,11 +1,4 @@
-#include <stdio.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <netinet/in.h>
-
-// ... (在这里，用OpenSSL库实现TLS，您可以参照不同版本OpenSSL的指南)
+#include "sendmail.h"
 
 #define SMTP_SERVER "smtp.gmail.com"
 #define SMTP_PORT 587
@@ -19,7 +12,7 @@ int send_command(int sock, const char *cmd, const char *arg){
     return 0;
 }
 
-int main(){
+int sendMail(){
     // 对邮件内容进行设置
     const char *from = "\"User Name\" <username@gmail.com>";
     const char *to = "\"Recipient Name\" <recipient@gmail.com>";
