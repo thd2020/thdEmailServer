@@ -1,23 +1,48 @@
 #ifndef SMTP_CLT_H
 #define SMTP_CLT_H
 
+#include <assert.h>
+#include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
+#include <syslog.h>
 #include <unistd.h>
+#include <time.h>
+#include <netdb.h>
+#include <arpa/inet.h>
 #include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/select.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <pthreadtypes.h>
 
-#define SMTP_SERVER "smtp.thd2020.site"
-#define SMTP_PORT 587
-typedef struct{
-  char *from = "\"User Name\" <username@gmail.com>";
-  char *to = "\"Recipient Name\" <recipient@gmail.com>";
-  char *subject = "Hello, world!";
-  char *body = "This is a test email sent from a simple SMTP client.";
-} MailContent;
+#define PORT			25
+#define DOMAIN			"thd2020.site"
+#define BACKLOG_MAX		(10)
+#define LOG_BUF_SIZE	1024
+#define BUF_SIZE		4096
+#define STREQU(a,b)		(strcmp(a, b) == 0)
 
-int send_command(int sock, const char *cmd, const char *arg);
-int sendMail();
+/**Sockets file descriptors*/
+typedef struct {
+	int 	sfd;
+	int_ll* next;
+} int_ll;
+
+/**Overall server state*/
+typedef struct {
+	int_ll*		sockfds;
+	int 		sockfd_max;
+	char*		domain;
+	pthread_t 	thread; // Latest spawned thread
+} state;
+
+/**Function prototypes*/ 
+void init_listen_socket(void);
+void *handle_smtp (void *thread_arg);
+void *get_in_addr(struct sockaddr *sa);
 
 #endif

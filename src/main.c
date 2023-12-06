@@ -1,13 +1,34 @@
 #include "utils.h"
 #include <stdio.h>
 
-int main(char** argv, int argc){
-    unsigned char* origin = malloc(sizeof(unsigned char));
+#define MAXBUFF 100
+
+int main(int argc, char** argv){
+    unsigned char* origin = malloc(MAXBUFF * sizeof(unsigned char));
+    int* option = malloc(sizeof(int));
     while(1){
-        printf("please input string to convert: \n");
-        gets(origin);
-        unsigned char* encode = base64_encode(origin);
-        printf("your base64 code is:\n %s\n", encode);
+        printf("0 - base64 encoding\n1 - base64 decoding\n2 - exit\n");
+        scanf("%d", option);
+        int c;
+        do{
+            c = getchar();
+        }while(c != EOF && c != '\n');
+        switch(*option){
+            case 0:
+                printf("please input string to encode: \n");
+                fgets(origin, MAXBUFF, stdin);
+                unsigned char *encode = base64_encode(origin);
+                printf("your base64 code is:\n%s\n", encode);
+                continue;
+            case 1:
+                printf("please input code to decode: \n");
+                fgets(origin, MAXBUFF, stdin);
+                unsigned char *decode = base64_decode(origin);
+                printf("your original string is:\n%s\n", decode);
+                continue;
+            case 3:
+                break;
+        }
     }
-    return(1);
+    return(0);
 }
