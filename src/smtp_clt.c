@@ -26,16 +26,16 @@ int main(int argc, char** argv){
         select(state.sockfd_max+1, &socks, NULL, NULL, NULL)
         for(p = state.sockfds; p != NULL && FD_ISSET(p->d, &socks); p = p->next){
             int conn_sock = accept(p->d, (struct sockaddr*)&clt_addr, sizeof(clt_addr));
-            if (new_sock == -1) {
+            if (conn_sock == -1) {
 					syslog(LOG_ERR, "Accepting client connection failed");
 					continue;
 			}
-        // Convert client IP to human-readable
-        void *client_ip = get_in_addr(\
-                (struct sockaddr *)&client_addr);
-        inet_ntop(client_addr.ss_family, \
-                client_ip, strbuf, sizeof(strbuf));
-        syslog(LOG_DEBUG, "Connection from %s", strbuf);
+            /**Log clients information*/
+            void *client_ip = get_in_addr(\
+                    (struct sockaddr *)&client_addr);
+            inet_ntop(client_addr.ss_family, \
+                    client_ip, strbuf, sizeof(strbuf));
+            syslog(LOG_DEBUG, "Connection from %s", strbuf);
 
         // Pack the socket file descriptor into dynamic mem
         // to be passed to thread; it will free this when done.
