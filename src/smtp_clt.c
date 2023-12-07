@@ -25,7 +25,7 @@ int main(int argc, char** argv){
         /**select readable socks*/
         select(state.sockfd_max+1, &socks, NULL, NULL, NULL);
         for(p = state.sockfds; p != NULL && FD_ISSET(p->sfd, &socks); p = p->next){
-            int conn_sock = accept(p->d, (struct sockaddr*)&clt_addr, sizeof(clt_addr));
+            int conn_sock = accept(p->sfd, (struct sockaddr*)&clt_addr, sizeof(clt_addr));
             if (conn_sock == -1) {
 					syslog(LOG_ERR, "Accepting client connection failed");
 					continue;
