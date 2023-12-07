@@ -33,7 +33,7 @@ typedef struct {
 } int_ll;
 
 /**Overall server state*/
-typedef struct {
+struct {
 	int_ll*		sockfds;
 	int 		sockfd_max;
 	char*		domain;

@@ -18,13 +18,13 @@ int main(int argc, char** argv){
 
     while(1){
         /**init sock link for select*/
-        FD_ZERO(%socks);
+        FD_ZERO(&socks);
         for(p = state.sockfds; p != NULL; p = p->next){
-            FD_SET(p->d, &socks)
+            FD_SET(p->sfd, &socks);
         } 
         /**select readable socks*/
-        select(state.sockfd_max+1, &socks, NULL, NULL, NULL)
-        for(p = state.sockfds; p != NULL && FD_ISSET(p->d, &socks); p = p->next){
+        select(state.sockfd_max+1, &socks, NULL, NULL, NULL);
+        for(p = state.sockfds; p != NULL && FD_ISSET(p->sfd, &socks); p = p->next){
             int conn_sock = accept(p->d, (struct sockaddr*)&clt_addr, sizeof(clt_addr));
             if (conn_sock == -1) {
 					syslog(LOG_ERR, "Accepting client connection failed");
