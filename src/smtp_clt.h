@@ -19,7 +19,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-#define PORT			"25"
+#define PORT			"2525"
 #define DOMAIN			"thd2020.site"
 #define BACKLOG_MAX		(10)
 #define LOG_BUF_SIZE	1024

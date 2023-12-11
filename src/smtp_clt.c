@@ -22,19 +22,21 @@ int start_smtp_clt(int argc, char** argv){
     /**open listening sockets for clients*/
     init_listen_socket();
     while (1){
+		socklen_t clt_addr_size;
         /**init listen_sock fdset for select*/
         FD_ZERO(&listen_socks);
         for (p = state.sockfds; p != NULL; p = p->next){
             FD_SET(p->sfd, &listen_socks);
-        } 
+        }
         /**select readable listen_socks*/
         select(state.sockfd_max+1, &listen_socks, NULL, NULL, NULL);
         for (p = state.sockfds; p != NULL; p = p->next){
             if (FD_ISSET(p->sfd, &listen_socks)){
                 /**create connection socket*/
-                int conn_sock = accept(p->sfd, (struct sockaddr*)&clt_addr, sizeof(clt_addr));
-                if (conn_sock == -1) {
-                    syslog(LOG_ERR, "Accepting client connection failed");
+                int conn_sock = accept(p->sfd, (struct sockaddr*)&clt_addr, &clt_addr_size);
+                if (conn_sock == -1){
+                    perror(&errno);
+					syslog(LOG_ERR, "Accepting client connection failed");
                     continue;
                 }
                 /**log clients information*/
@@ -106,6 +108,19 @@ void init_listen_socket(){
 				(p->ai_family == AF_INET) ? 4 : 6 );
 			exit(EXIT_FAILURE);
 		}
+		/**Update highest fd value for select*/
+		(listen_sock > state.sockfd_max) ? (state.sockfd_max = listen_sock) : 1;
+		/**Then new listening socket to the state sfd list*/
+		struct sfd_ll* new_listen_sock = malloc(sizeof(struct sfd_ll));
+		new_listen_sock->sfd = listen_sock;
+		new_listen_sock->next = state.sockfds;
+		state.sockfds = new_listen_sock;
+		if (state.sockfds == NULL){
+			syslog(LOG_ERR, "Completely failed to bind to any sockets");
+			exit(EXIT_FAILURE);
+		}
+		freeaddrinfo(hostinfo);
+		return;
     }
 } 
 
@@ -181,18 +196,18 @@ void* handle_clt_smtp(void* thread_arg){
 			// Null-terminate the verb for strcmp
 			buffer[4] = '\0';
 			/** Respond to each verb accordingly.
-			/ You should replace these with more meaningful
-			/ actions than simply printing everything.
+			You should replace these with more meaningful
+			actions than simply printing everything.
 			*/
 			if (STREQU(buffer, "HELO")) { // Initial greeting
 				sprintf(bufferout, "250 Ok\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
-			} else if (STREQU(buffer, "MAIL")) { // New mail from...
+			} else if (STREQU(buffer, "MAIL FROM")) { // New mail from...
 				sprintf(bufferout, "250 Ok\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
-			} else if (STREQU(buffer, "RCPT")) { // Mail addressed to...
+			} else if (STREQU(buffer, "RCPT TO")) { // Mail addressed to...
 				sprintf(bufferout, "250 Ok recipient\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
