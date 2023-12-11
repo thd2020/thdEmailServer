@@ -11,13 +11,13 @@
 #include <unistd.h>
 #include <time.h>
 #include <netdb.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
+#include <pthreadtypes.h>
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <pthreadtypes.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 
 #define PORT			25
 #define DOMAIN			"thd2020.site"
@@ -26,23 +26,24 @@
 #define BUF_SIZE		4096
 #define STREQU(a,b)		(strcmp(a, b) == 0)
 
+/**Overall server state*/
+struct {
+	sfd_ll*		sockfds;
+	int 		sockfd_max;
+	char*		domain;
+	pthread_t 	thread; /*Latest spawned thread*/
+} state;
+
 /**Sockets file descriptors*/
 typedef struct {
 	int 	sfd;
-	int_ll* next;
-} int_ll;
-
-/**Overall server state*/
-struct {
-	int_ll*		sockfds;
-	int 		sockfd_max;
-	char*		domain;
-	pthread_t 	thread; // Latest spawned thread
-} state;
+	sfd_ll* next;
+} sfd_ll;
 
 /**Function prototypes*/ 
-void init_listen_socket(void);
-void *handle_smtp (void *thread_arg);
-void *get_in_addr(struct sockaddr *sa);
+int start_smtp_clt(int argc, char** argv);
+void init_listen_socket();
+void* handle_clt_smtp(void* thread_arg);
+void* get_in_addr(struct sockaddr* sa);
 
 #endif
