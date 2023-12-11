@@ -187,7 +187,7 @@ void* handle_clt_smtp(void* thread_arg){
         eol[0] = '\0';
         if (!inmessage){
             printf("C%d: %s\n", sockfd, buffer);
-			/**Replace all lower case letters so verbs are all caps
+			/**Replace all lower case letters so verbs are all caps*/
 			for (int i=0; i<4; i++) {
 				if (islower(buffer[i])) {
 					buffer[i] += 'A' - 'a';
