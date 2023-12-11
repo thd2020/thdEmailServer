@@ -1,9 +1,17 @@
 #include "smtp_clt.h"
 
+/**Overall server sfd_state*/
+struct {
+	struct sfd_ll* 	sockfds;
+	int 		sockfd_max;
+	char*		domain;
+	pthread_t 	thread; /*Latest spawned thread*/
+} state;
+
 int start_smtp_clt(int argc, char** argv){
     state.domain = DOMAIN; /*domain name for this mail server*/
     struct sockaddr_storage clt_addr; /*client address*/
-    sfd_ll* p; /*listening sockets link list*/
+    struct sfd_ll* p; /*listening sockets link list*/
     fd_set listen_socks; /*listening sockets fdset*/
     char ipaddr_buf[INET6_ADDRSTRLEN]; /*buffer for ipv6 address*/
     char* syslog_buf = malloc(LOG_BUF_SIZE); /*buffer for log*/
@@ -164,7 +172,7 @@ void* handle_clt_smtp(void* thread_arg){
         eol[0] = '\0';
         if (!inmessage){
             printf("C%d: %s\n", sockfd, buffer);
-			// Replace all lower case letters so verbs are all caps
+			/**Replace all lower case letters so verbs are all caps
 			for (int i=0; i<4; i++) {
 				if (islower(buffer[i])) {
 					buffer[i] += 'A' - 'a';
@@ -172,10 +180,10 @@ void* handle_clt_smtp(void* thread_arg){
 			}
 			// Null-terminate the verb for strcmp
 			buffer[4] = '\0';
-			// Respond to each verb accordingly.
-			// You should replace these with more meaningful
-			// actions than simply printing everything.
-			//
+			/** Respond to each verb accordingly.
+			/ You should replace these with more meaningful
+			/ actions than simply printing everything.
+			*/
 			if (STREQU(buffer, "HELO")) { // Initial greeting
 				sprintf(bufferout, "250 Ok\r\n");
 				printf("S%d: %s", sockfd, bufferout);
