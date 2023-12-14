@@ -90,9 +90,22 @@ unsigned char *base64_decode(unsigned char *code)  {
 }
 
 /**
+ * 初始化数据库链接
+*/
+int init_mysql_con(){
+    MYSQL* con = mysql_init(NULL);
+	/**connect to mysql*/
+	if (mysql_real_connect(con, "localhost", mysql_user, mysql_pass, "smtp_server", 0, NULL, 0) == NULL){
+		perror("mysql connection failed");
+		mysql_close(con);
+		exit(EXIT_FAILURE);
+	}
+}
+
+/**
  * 用户注册
 */
-int register_user(char *username) {
+int register_user(char *username){
   /**检查用户名是否为空**/
   if (strlen(username) == 0 || strlen(username) > USERNAME_LENGTH){
     printf("Invalid username!\n");

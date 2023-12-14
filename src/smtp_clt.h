@@ -16,8 +16,10 @@
 #include <sys/select.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <mysql/mysql.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include "utils.h"
 
 #define PORT			"2525"
 #define DOMAIN			"thd2020.site"
@@ -33,9 +35,9 @@ struct sfd_ll {
 };
 
 /**Function prototypes*/ 
-int start_smtp_clt(int argc, char** argv);
+int start_smtp_clt(int argc, char** argv, MYSQL* con);
 void init_listen_socket();
 void* handle_clt_smtp(void* thread_arg);
 void* get_in_addr(struct sockaddr* sa);
 
-#endif
+#endif /*SMTP_CLT_H*/

@@ -1,10 +1,10 @@
 #include "utils.h"
 #include "smtp_clt.h"
-#include <stdio.h>
 
 #define MAXBUFF 100
 
 int main(int argc, char** argv){
+	
     start_smtp_clt(argc, argv);
     unsigned char* origin = malloc(MAXBUFF * sizeof(unsigned char));
     int* option = malloc(sizeof(int));

@@ -8,7 +8,7 @@ struct {
 	pthread_t 	thread; /*Latest spawned thread*/
 } state;
 
-int start_smtp_clt(int argc, char** argv){
+int start_smtp_clt(int argc, char** argv, MYSQL* con){
     state.domain = DOMAIN; /*domain name for this mail server*/
     struct sockaddr_storage clt_addr; /*client address*/
     struct sfd_ll* p; /*listening sockets link list*/
@@ -148,6 +148,10 @@ void* handle_clt_smtp(void* thread_arg){
         fd_set conn_socks;
         int buffer_left = BUF_SIZE - buffer_offset - 1;
         char* eol;
+		char* username_base64;
+		char* username;
+		char* userpass_base64;
+		int user_id = NULL;
 
         FD_ZERO(&conn_socks);
         FD_SET(sockfd, &conn_socks);
@@ -199,42 +203,53 @@ void* handle_clt_smtp(void* thread_arg){
 			You should replace these with more meaningful
 			actions than simply printing everything.
 			*/
-			if (STREQU(buffer, "HELO")) { // Initial greeting
+			if (STREQU(buffer, "HELO")){ /*Initial greeting*/
 				sprintf(bufferout, "250 Ok\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
-			} else if (STREQU(buffer, "MAIL FROM")) { // New mail from...
-				sprintf(bufferout, "250 Ok\r\n");
+			} else if (STREQU(buffer, "AUTH LOGIN")){
+				auth:
+				sprintf(bufferout, "334 VXNlcm5hbWU6\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
-			} else if (STREQU(buffer, "RCPT TO")) { // Mail addressed to...
-				sprintf(bufferout, "250 Ok recipient\r\n");
+				if (cmd_len = recv(sockfd, username_base64, buffer_left, 0) == -1){
+					syslog(LOG_WARNING, "receive username failed");
+					goto auth;
+				}
+				username = base64_decode(username_base64);
+				if (mysql_query(con, "SELECT user_id FROM users WHERE user_name"))
+			} else if (STREQU(buffer, "MAIL FROM")){ /*New mail from*/
+				sprintf(bufferout, user_id == NULL?"Need Authentication First\r\n":"250 Ok\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
-			} else if (STREQU(buffer, "DATA")) { // Message contents...
-				sprintf(bufferout, "354 Continue\r\n");
+			} else if (STREQU(buffer, "RCPT TO")){ /*Mail addressed to...*/
+				sprintf(bufferout, user_id == NULL?"Need Authentication First":"250 Ok recipient\r\n");
+				printf("S%d: %s", sockfd, bufferout);
+				send(sockfd, bufferout, strlen(bufferout), 0);
+			} else if (STREQU(buffer, "DATA")){ /*Message contents...*/
+				sprintf(bufferout, user_id == NULL?"Need Authentication First\r\n":"354 Continue\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
 				inmessage = 1;
-			} else if (STREQU(buffer, "RSET")) { // Reset the connection
+			} else if (STREQU(buffer, "RSET")){ /*Reset the connection*/
 				sprintf(bufferout, "250 Ok reset\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
-			} else if (STREQU(buffer, "NOOP")) { // Do nothing.
+			} else if (STREQU(buffer, "NOOP")){ /*Do nothing*/
 				sprintf(bufferout, "250 Ok noop\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
-			} else if (STREQU(buffer, "QUIT")) { // Close the connection
+			} else if (STREQU(buffer, "QUIT")){ /*Close the connection*/
 				sprintf(bufferout, "221 Ok\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
 				break;
-			} else { // The verb used hasn't been implemented.
+			} else { /*The verb used hasn't been implemented.*/
 				sprintf(bufferout, "502 Command Not Implemented\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
 			}
-		} else { // We are inside the message after a DATA verb.
+		} else { /*We are inside the message after a DATA verb.*/
 			printf("C%d: %s\n", sockfd, buffer);
 			if (STREQU(buffer, ".")) { // A single "." signifies the end
 				sprintf(bufferout, "250 Ok\r\n");
@@ -243,15 +258,15 @@ void* handle_clt_smtp(void* thread_arg){
 				inmessage = 0;
 			}
         }
-        // Shift the rest of the buffer to the front
+        /**Shift the rest of the buffer to the front*/
 		memmove(buffer, eol+2, BUF_SIZE - (eol + 2 - buffer));
 		buffer_offset -= (eol - buffer) + 2;
-		// Do we already have additional lines to process? If so,
-		// commit a horrid sin and goto the line processing section again.
+		/**Do we already have additional lines to process? If so,
+		commit a horrid sin and goto the line processing section again.*/
 		if (strstr(buffer, "\r\n")) 
 			goto process_line;
 	}
-	// All done. Clean up everything and exit.
+	/**All done. Clean up everything and exit.*/
 	close(sockfd);
 	pthread_exit(NULL);
 }
