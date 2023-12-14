@@ -26,6 +26,7 @@
 #define BACKLOG_MAX		(10)
 #define LOG_BUF_SIZE	1024
 #define BUF_SIZE		4096
+#define SHORTBUF_SIZE	512
 #define STREQU(a,b)		(strcmp(a, b) == 0)
 
 /**Sockets file descriptors*/
@@ -35,7 +36,7 @@ struct sfd_ll {
 };
 
 /**Function prototypes*/ 
-int start_smtp_clt(int argc, char** argv, MYSQL* con);
+int start_smtp_clt(char* pname);
 void init_listen_socket();
 void* handle_clt_smtp(void* thread_arg);
 void* get_in_addr(struct sockaddr* sa);

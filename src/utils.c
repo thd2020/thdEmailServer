@@ -1,5 +1,8 @@
 #include "utils.h"
 
+/**mysql connection handler**/
+extern MYSQL* con = NULL;
+
 /**
  * BASE64编码函数
 */
@@ -93,7 +96,7 @@ unsigned char *base64_decode(unsigned char *code)  {
  * 初始化数据库链接
 */
 int init_mysql_con(){
-    MYSQL* con = mysql_init(NULL);
+    con = mysql_init(NULL);
 	/**connect to mysql*/
 	if (mysql_real_connect(con, "localhost", mysql_user, mysql_pass, "smtp_server", 0, NULL, 0) == NULL){
 		perror("mysql connection failed");
@@ -105,27 +108,34 @@ int init_mysql_con(){
 /**
  * 用户注册
 */
-int register_user(char *username){
-  /**检查用户名是否为空**/
-  if (strlen(username) == 0 || strlen(username) > USERNAME_LENGTH){
+int register_user(char* username, char* userpass){
+    char* query = (char*)malloc(BUFSIZ);
+    char path[512];
+
+    /**检查用户名是否为空**/
+    if (strlen(username) == 0 || strlen(username) > USERNAME_LENGTH){
     printf("Invalid username!\n");
     return -1;
-  }
-  /**构建邮箱文件夹路径**/
-  char path[512];
-  snprintf(path, sizeof(path), "%s/%s", BASE_PATH, username);
-  /**创建目录**/
-  struct stat st = {0};
-  /**文件夹存在性检查**/
-  if (stat(path, &st) != -1){
-    printf("This user already exists!\n");
-    return -1;
-  }
-  /**尝试创建文件夹**/
-  if (mkdir(path, S_IRWXU) != 0){
-    perror("Error in mkdir");
-    return -1;
-  }
-  printf("User registered and mailbox created successfully!\n");
-  return 0;
+    }
+    /**构建邮箱文件夹路径**/
+    snprintf(path, sizeof(path), "%s/%s", BASE_PATH, username);
+    sprintf(query, "INSERT INTO 'users' values ('Cardinal', %s, %s, %s)", username, base64_encode(userpass), path);
+    /**创建目录**/
+    struct stat st = {0};
+    /**文件夹存在性检查**/
+    if (stat(path, &st) != -1){
+        printf("This user already exists!\n");
+        return -1;
+    }
+    /**尝试创建文件夹**/
+    if (mkdir(path, S_IRWXU) != 0){
+        perror("Error in mkdir");
+        return -1;
+    }
+    if (!mysql_query(con, query)){
+        syslog(LOG_WARNING, "parsing sql: %s failed", query);
+        return -1;
+    }
+    printf("User registered and mailbox created successfully!\n");
+    return 0;
 }

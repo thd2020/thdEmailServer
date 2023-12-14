@@ -8,7 +8,7 @@ struct {
 	pthread_t 	thread; /*Latest spawned thread*/
 } state;
 
-int start_smtp_clt(int argc, char** argv, MYSQL* con){
+int start_smtp_clt(char* pname){
     state.domain = DOMAIN; /*domain name for this mail server*/
     struct sockaddr_storage clt_addr; /*client address*/
     struct sfd_ll* p; /*listening sockets link list*/
@@ -17,7 +17,7 @@ int start_smtp_clt(int argc, char** argv, MYSQL* con){
     char* syslog_buf = malloc(LOG_BUF_SIZE); /*buffer for log*/
 
     /**init system log*/
-    sprintf(syslog_buf, "%s", argv[0]);
+    sprintf(syslog_buf, "%s", pname);
     openlog(syslog_buf, LOG_PERROR|LOG_PID, LOG_USER);
     /**open listening sockets for clients*/
     init_listen_socket();
@@ -148,9 +148,10 @@ void* handle_clt_smtp(void* thread_arg){
         fd_set conn_socks;
         int buffer_left = BUF_SIZE - buffer_offset - 1;
         char* eol;
-		char* username_base64;
-		char* username;
-		char* userpass_base64;
+		char* buf = (char*)malloc(SHORTBUF_SIZE);
+		char* username = (char*)malloc(SHORTBUF_SIZE);
+		char* userpass_base64 = (char*)malloc(SHORTBUF_SIZE);
+		char* query = (char*)malloc(BUF_SIZE);
 		int user_id = NULL;
 
         FD_ZERO(&conn_socks);
@@ -212,12 +213,49 @@ void* handle_clt_smtp(void* thread_arg){
 				sprintf(bufferout, "334 VXNlcm5hbWU6\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
-				if (cmd_len = recv(sockfd, username_base64, buffer_left, 0) == -1){
+				if (cmd_len = recv(sockfd, buf, buffer_left, 0) == -1){
 					syslog(LOG_WARNING, "receive username failed");
-					goto auth;
+					goto fallback;
 				}
-				username = base64_decode(username_base64);
-				if (mysql_query(con, "SELECT user_id FROM users WHERE user_name"))
+				buf = base64_decode(buf);
+				sprintf(query, "SELECT user_id, user_pass FROM users WHERE user_name = %s", buf);
+				if (!mysql_query(con, query)){
+					syslog(LOG_WARNING, "parsing sql: %s failed", query);
+					goto fallback;
+				}
+				MYSQL_RES* res = mysql_store_result(con);
+				MYSQL_ROW row;
+				if (res == NULL){
+					syslog(LOG_WARNING, "store mysql result failed");
+					goto fallback;
+				}
+				if ((row = mysql_fetch_row(res)) != NULL){
+					user_id = row[0];
+					username = buf;
+					userpass_base64 = row[1];
+				} else {
+					syslog(LOG_WARNING, "no such user");
+					goto fallback;
+				}
+				sprintf(bufferout, "334 UGFzc3dvcmQ6\r\n");
+				printf("S%d: %s", sockfd, bufferout);
+				send(sockfd, bufferout, strlen(bufferout), 0); 
+				if (cmd_len = recv(sockfd, buf, buffer_left, 0) == -1){
+					syslog(LOG_WARNING, "receive userpass failed");
+					goto fallback;
+				}
+				if (buf != userpass_base64){
+					syslog(LOG_WARNING, "userpass incorrect or not match");
+					user_id = NULL;
+					username = NULL;
+					userpass_base64 = NULL;
+					goto fallback;
+				}
+				else if (buf == userpass_base64){
+					sprintf(bufferout, "Authentication successful\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0); 
+				}
 			} else if (STREQU(buffer, "MAIL FROM")){ /*New mail from*/
 				sprintf(bufferout, user_id == NULL?"Need Authentication First\r\n":"250 Ok\r\n");
 				printf("S%d: %s", sockfd, bufferout);
@@ -245,6 +283,7 @@ void* handle_clt_smtp(void* thread_arg){
 				send(sockfd, bufferout, strlen(bufferout), 0);
 				break;
 			} else { /*The verb used hasn't been implemented.*/
+				fallback:
 				sprintf(bufferout, "502 Command Not Implemented\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);

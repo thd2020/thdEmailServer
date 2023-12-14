@@ -1,4 +1,4 @@
-CC = gcc -g -Wall -lpthread
+CC = gcc -g -Wall -lpthread -lmysqlclient -lm -lssl -lcrypto -ldl
 SOURCE = src/utils.c obj/smtp_clt.c src/main.c
 INC =  src/utils.h
 OBJS = obj/utils.o obj/smtp_clt.o obj/main.o
