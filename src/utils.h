@@ -11,6 +11,8 @@
 #include <sys/stat.h>
 #include <mysql/mysql.h>
 
+/**your mail domain*/
+#define DOMAIN     "thd2020.site"
 /**mysql username*/
 #define mysql_user "ubuntu"
 /**mysql password*/

@@ -95,6 +95,8 @@ unsigned char *base64_decode(unsigned char *code)  {
  * 初始化数据库链接
 */
 int init_mysql_con(){
+    if (con != NULL)
+        return 1;
     con = mysql_init(NULL);
 	/**connect to mysql*/
 	if (!mysql_real_connect(con, "localhost", mysql_user, mysql_pass, "smtp_server", 0, NULL, 0)){
@@ -102,6 +104,7 @@ int init_mysql_con(){
 		mysql_close(con);
 		exit(EXIT_FAILURE);
 	}
+    return 0;
 }
 
 /**
