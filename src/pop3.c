@@ -154,15 +154,17 @@ void* handle_pop3(void* thread_arg){
 	FILE* data = NULL; /*data file pointer*/
 	int data_lines = 0; /*line counter*/
 	int mailcount = 0;
-	long mailsize = 0;
+	int mailsize = 0;
 	int valid = 0;
+	char** maildrop = malloc(128);
+	int dropcount = 0; 
 	MYSQL_RES* res = NULL;
     
     /**starting system log*/
     syslog(LOG_DEBUG, "Starting thread for socket #%d", sockfd);
     free(thread_arg);
     /**send welcome*/
-    sprintf(bufferout, "220 %s POP3 thdEmail Test Server\r\n", pstate.domain);
+    sprintf(bufferout, "+OK POP3 server ready %s\r\n", pstate.domain);
 	printf("%s", bufferout);
 	send(sockfd, bufferout, strlen(bufferout), 0);
     while (1){
@@ -250,6 +252,8 @@ void* handle_pop3(void* thread_arg){
 					printf("S%d: %s", sockfd, bufferout);
 					send(sockfd, bufferout, strlen(bufferout), 0);
 				}
+				sscanf(buffer, "PASS %[0-9a-fA-F]", ubuf);
+				ubuf = base64_encode(ubuf);
 				if (!STREQU(ubuf, userpass_base64)){
 					syslog(LOG_WARNING, "userpass incorrect or not match");
 					goto fallback;
@@ -261,6 +265,12 @@ void* handle_pop3(void* thread_arg){
 					send(sockfd, bufferout, strlen(bufferout), 0);
 				}
 			} else if (strstr(buffer, "STAT")-buffer==0){ /*Diplay Mails Status*/
+				if (valid != 1){
+					sprintf(bufferout, "-ERR Need Auth First\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
+					goto post_process;
+				}
 				sprintf(query, "SELECT COUNT(*), SUM(`size`) FROM `rc_mails` WHERE `user_id`=%d AND `processed`=0", user_id);
 				if (mysql_query(con, query)){
 					syslog(LOG_WARNING, "parsing sql: %s failed", query);
@@ -283,6 +293,12 @@ void* handle_pop3(void* thread_arg){
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
 			} else if (STREQU(buffer, "LIST")){ /*List Mails*/
+				if (valid != 1){
+					sprintf(bufferout, "-ERR Need Auth First\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
+					goto post_process;
+				}
 				sprintf(query, "SELECT COUNT(*), SUM(`size`) FROM `rc_mails` WHERE `user_id`=%d AND `processed`=0", user_id);
 				if (mysql_query(con, query)){
 					syslog(LOG_WARNING, "parsing sql: %s failed", query);
@@ -322,48 +338,15 @@ void* handle_pop3(void* thread_arg){
 						send(sockfd, bufferout, strlen(bufferout), 0);
 					} else {
 						syslog(LOG_WARNING, "cannot fetch row %d", i);
-						return -1;
 					}
 				}
-			} else if (strstr(buffer, "PASS")-buffer==0){
-				if (user_id == 0){
-					sprintf(bufferout, "Need USER first!\r\n");
+			} else if (strstr(buffer, "RETR")-buffer==0){ /*Retrieve a Mail*/
+				if (valid != 1){
+					sprintf(bufferout, "-ERR Need Auth First\r\n");
 					printf("S%d: %s", sockfd, bufferout);
 					send(sockfd, bufferout, strlen(bufferout), 0);
-				}
-				if (!STREQU(ubuf, userpass_base64)){
-					syslog(LOG_WARNING, "userpass incorrect or not match");
 					goto post_process;
 				}
-				else if (STREQU(ubuf, userpass_base64)){
-					valid = 1;
-					sprintf(bufferout, "+OK valid login\r\n");
-					printf("S%d: %s", sockfd, bufferout);
-					send(sockfd, bufferout, strlen(bufferout), 0);
-				}
-			} else if (strstr(buffer, "STAT")-buffer==0){ /*Diplay Mails Status*/
-				sprintf(query, "SELECT COUNT(*), SUM(`size`) FROM `rc_mails` WHERE `user_id`=%d AND `processed`=0", user_id);
-				if (mysql_query(con, query)){
-					syslog(LOG_WARNING, "parsing sql: %s failed", query);
-					goto post_process;
-				}
-				res = mysql_store_result(con);
-				if (res == NULL){
-					syslog(LOG_WARNING, "store mysql result failed");
-					goto post_process;
-				}
-				MYSQL_ROW row;
-				if ((row = mysql_fetch_row(res)) != NULL){
-					mailcount = atoi(row[0]);
-					mailsize = atoi(row[1]);
-				} else {
-					syslog(LOG_WARNING, "cannot fetch row");
-					goto post_process;
-				}
-				sprintf(bufferout, "+OK %d messages [%d byte(s)]\r\n", mailcount, mailsize);
-				printf("S%d: %s", sockfd, bufferout);
-				send(sockfd, bufferout, strlen(bufferout), 0);
-			} else if (STREQU(buffer, "RETR")){ /*Retrieve a Mail*/
 				sscanf(buffer, "RETR %d", &rm_id);
 				sprintf(query, "SELECT `data_path`, `size` FROM `rc_mails` WHERE `rm_id`=%d", rm_id);
 				if (mysql_query(con, query)){
@@ -383,9 +366,9 @@ void* handle_pop3(void* thread_arg){
 					goto post_process;
 				}
 				FILE* data = fopen(data_path, "r");
-				char buff[1024];
+				char* buff = malloc(1024);
 				int len = 0;
-				sprintf(bufferout, "+OK %d octets follow", row[1]);
+				sprintf(bufferout, "+OK %d octets follow", atoi(row[1]));
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
 				while(len = fgets(buff, 1024, data))
@@ -394,7 +377,13 @@ void* handle_pop3(void* thread_arg){
 					printf("S%d: %s", sockfd, bufferout);
 					send(sockfd, bufferout, strlen(bufferout), 0);
 				}
-			} else if (STREQU(buffer, "TOP")){ /*Fetch top n line of a Mail*/
+			} else if (strstr(buffer, "TOP")-buffer==0){ /*Fetch top n line of a Mail*/
+				if (valid != 1){
+					sprintf(bufferout, "-ERR Need Auth First\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
+					goto post_process;
+				}
 				int top = 1;
 				sscanf(buffer, "RETR %d %d", &rm_id, &top);
 				sprintf(query, "SELECT `data_path`, `size` FROM `rc_mails` WHERE `rm_id`=%d", rm_id);
@@ -430,7 +419,13 @@ void* handle_pop3(void* thread_arg){
 					if (i >= top)
 						break;
 				}
-			} else if (STREQU(buffer, "DELE")){ /*Delete a mail*/
+			} else if (strstr(buffer, "DELE")-buffer==0){ /*Delete a mail*/
+				if (valid != 1){
+					sprintf(bufferout, "-ERR Need Auth First\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
+					goto post_process;
+				}
 				sscanf(buffer, "DELE %d", &rm_id);
 				sprintf(query, "SELECT `data_path` FROM `rc_mails` WHERE `rm_id`=%d", rm_id);
 				if (mysql_query(con, query)){
@@ -449,6 +444,8 @@ void* handle_pop3(void* thread_arg){
 					syslog(LOG_WARNING, "cannot fetch row");
 					goto post_process;
 				}
+				maildrop[dropcount] = data_path;
+				dropcount++;
 				if (remove(data_path)){
 					syslog(LOG_WARNING, "cannot remove %s", data_path);
 					goto post_process;
@@ -459,6 +456,26 @@ void* handle_pop3(void* thread_arg){
 					goto post_process;
 				}
 				sprintf(bufferout, "+OK message deleted");
+				printf("S%d: %s", sockfd, bufferout);
+				send(sockfd, bufferout, strlen(bufferout), 0);
+			} else if (strstr(buffer, "UIDL")-buffer==0){ 
+				if (valid != 1){
+					sprintf(bufferout, "-ERR Need Auth First\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
+					goto post_process;
+				}
+				sprintf(bufferout, "+OK 1 1\r\n");
+				printf("S%d: %s", sockfd, bufferout);
+				send(sockfd, bufferout, strlen(bufferout), 0);
+			} else if (strstr(buffer, "RSET")-buffer==0){ 
+				if (valid != 1){
+					sprintf(bufferout, "-ERR Need Auth First\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
+					goto post_process;
+				}
+				sprintf(bufferout, "+OK\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
 			} else if (STREQU(buffer, "NOOP")){ /*Do nothing*/
@@ -480,7 +497,7 @@ void* handle_pop3(void* thread_arg){
 			user_id = 0;
 			bzero(username, strlen(username));
 			bzero(userpass_base64, strlen(userpass_base64));
-			sprintf(bufferout, "Something went wrong, try again\r\n");
+			sprintf(bufferout, "-ERR Something went wrong, try again\r\n");
 			printf("S%d: %s", sockfd, bufferout);
 			send(sockfd, bufferout, strlen(bufferout), 0);
         }
