@@ -153,6 +153,7 @@ void* handle_clt_smtp(void* thread_arg){
 	time_t cur = malloc(sizeof(time_t));
 	FILE* data = NULL; /*data file pointer*/
 	int data_lines = 0; /*line counter*/
+	int size = 0;
     
     /**starting system log*/
     syslog(LOG_DEBUG, "Starting thread for socket #%d", sockfd);
@@ -221,13 +222,18 @@ void* handle_clt_smtp(void* thread_arg){
 				char* ehlo_format = malloc(50);
 				sprintf(format, "HELO %s", smtp_host);
 				sprintf(ehlo_format, "EHLO %s", smtp_host);
-				if (strstr(buffer, format)-buffer!=0 && strstr(buffer, ehlo_format)-buffer!=0){
-					sprintf(bufferout, "Wrong host!\r\n");
+				if (strstr(buffer, format)-buffer!=0 && strstr(buffer, ehlo_format)-buffer!=0 && strstr(buffer, "HELO [127.0.0.1]")-buffer!=0 && strstr(buffer, "EHLO [127.0.0.1]")-buffer!=0){
+					sprintf(bufferout, "550 Wrong host!\r\n");
 					printf("S%d: %s", sockfd, bufferout);
 					send(sockfd, bufferout, strlen(bufferout), 0);
 				}
 				else if (strstr(buffer, format)-buffer==0 || strstr(buffer, ehlo_format)-buffer==0){
 					sprintf(bufferout, "250 Ok\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
+				}
+				else if (strstr(buffer, "HELO [127.0.0.1]")-buffer==0 || strstr(buffer, "EHLO [127.0.0.1]")-buffer==0){
+					sprintf(bufferout, "250-smtp.thd2020.site\r\n250 AUTH LOGIN\r\n");
 					printf("S%d: %s", sockfd, bufferout);
 					send(sockfd, bufferout, strlen(bufferout), 0);
 				}
@@ -293,7 +299,7 @@ void* handle_clt_smtp(void* thread_arg){
 					goto fallback;
 				}
 				else if (STREQU(ubuf, userpass_base64)){
-					sprintf(bufferout, "Authentication successful\r\n");
+					sprintf(bufferout, "235 Authentication successfully\r\n");
 					printf("S%d: %s", sockfd, bufferout);
 					send(sockfd, bufferout, strlen(bufferout), 0);
 				}
@@ -413,6 +419,7 @@ void* handle_clt_smtp(void* thread_arg){
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
 				inmessage = 1;
+				size = 0;
 				data = fopen(data_path, "w");
 			} else if (STREQU(buffer, "RSET")){ /*Reset the connection*/
 				if (sm_id != 0){
@@ -457,8 +464,9 @@ void* handle_clt_smtp(void* thread_arg){
 			data_lines++;
 			fputs(buffer, data);
 			fputc('\n', data);
+			size += strlen(buffer)+1;
 			printf("C%d: %s\n", sockfd, buffer);
-			if (data_lines==3 && strstr(buffer, "Subject:")-buffer==0){
+			if (data_lines==4 && strstr(buffer, "Subject:")-buffer==0){
 				char* subject = malloc(50);
 				sscanf(buffer, "Subject: %s", subject);
 				sprintf(query, "UPDATE `sent_mails` SET `title`='%s' WHERE `sm_id`=%d", subject, sm_id);
@@ -468,7 +476,7 @@ void* handle_clt_smtp(void* thread_arg){
 			}
 			else if (data_lines==3){
 				char* subject = malloc(50);
-				sprintf(query, "UPDATE `sent_mails` SET `title`='%s' WHERE `sm_id`=%d", buffer, sm_id);
+				sprintf(query, "UPDATE `sent_mails` SET `title`='%s', `size`=%d WHERE `sm_id`=%d", buffer, size, sm_id);
 				if (mysql_query(con, query)){
 					syslog(LOG_WARNING, "parsing sql: %s failed", query);
 				}

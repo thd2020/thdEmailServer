@@ -465,7 +465,9 @@ void* handle_pop3(void* thread_arg){
 					send(sockfd, bufferout, strlen(bufferout), 0);
 					goto post_process;
 				}
-				sprintf(bufferout, "+OK 1 1\r\n");
+				int input_id = 0;
+				sscanf(buffer, "UIDL %d", &input_id);
+				sprintf(bufferout, "+OK %d %d\r\n", &input_id, &input_id);
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
 			} else if (strstr(buffer, "RSET")-buffer==0){ 

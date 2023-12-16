@@ -50,8 +50,9 @@ int handle_mx(int sm_id){
 	char* title = (char*)malloc(150);
 	time_t cur = malloc(sizeof(time_t));
 	char* query = (char*)malloc(BUF_SIZE);
+	int size = 0;
 
-	sprintf(query, "SELECT sm.`user_id`, sm.`rcpt`, sm.`data_path`, sm.`title`, u.`username` FROM `sent_mails` sm, `users` u WHERE `sm_id`=%d", sm_id);
+	sprintf(query, "SELECT sm.`user_id`, sm.`rcpt`, sm.`data_path`, sm.`title`, sm.`size`, u.`username` FROM `sent_mails` sm, `users` u WHERE `sm_id`=%d", sm_id);
 	if (mysql_query(con, query)){
 		syslog(LOG_WARNING, "parsing sql: %s failed", query);
 		return -1;
@@ -67,7 +68,8 @@ int handle_mx(int sm_id){
 		rcpt = row[1];
 		data_path = row[2];
 		title = row[3];
-		from = row[4];
+		size = row[4];
+		from = row[5];
 	}
 	else{
 		syslog(LOG_WARNING, "cannot fetch row for %s", sm_id);
@@ -93,7 +95,7 @@ int handle_mx(int sm_id){
 		if ((row = mysql_fetch_row(res)) != NULL){
 			ruser_id = atoi(row[0]);
 			cur = time(NULL);
-			sprintf(query, "INSERT INTO `rc_mails` (`user_id`, `time`, `title`, `from`) VALUES (%d, FROM_UNIXTIME(%d), '%s', '%s@%s')", ruser_id, cur, title, from, DOMAIN);
+			sprintf(query, "INSERT INTO `rc_mails` (`user_id`, `time`, `title`, `from`, `size`) VALUES (%d, FROM_UNIXTIME(%d), '%s', '%s@%s', %d)", ruser_id, cur, title, from, DOMAIN, size);
 			if (mysql_query(con, query)){
 				syslog(LOG_WARNING, "parsing sql: %s failed", query);
 				return -1;
