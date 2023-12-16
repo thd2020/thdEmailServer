@@ -1,5 +1,5 @@
-#ifndef SMTP_CLT_H
-#define SMTP_CLT_H
+#ifndef POP3_H
+#define POP3_H
 
 #include <assert.h>
 #include <ctype.h>
@@ -21,7 +21,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-#define PORT			"2525"
+#define PPORT			"110"
 #define BACKLOG_MAX		(10)
 #define LOG_BUF_SIZE	1024
 #define BUF_SIZE		4096
@@ -29,15 +29,15 @@
 #define STREQU(a,b)		(strcmp(a, b) == 0)
 
 /**Sockets file descriptors*/
-struct sfd_ll {
+struct psfd_ll {
 	int 	sfd;
-	struct sfd_ll* next;
+	struct psfd_ll* next;
 };
 
 /**Function prototypes*/ 
-int start_smtp_clt(char* pname);
-void init_listen_socket();
-void* handle_clt_smtp(void* thread_arg);
-void* get_in_addr(struct sockaddr* sa);
+int start_pop3(char* pname);
+void init_pop3_socket();
+void* handle_pop3(void* thread_arg);
+void* pget_in_addr(struct sockaddr* sa);
 
-#endif /*SMTP_CLT_H*/
+#endif /*POP3_H*/

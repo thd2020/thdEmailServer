@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS `sent_mails` (
     `title` VARCHAR(30),
     `rcpt` VARCHAR(30) COMMENT 'recipient',
     `data_path` VARCHAR(150),
+    `size` INT 0 COMMENT 'size in bytes',
     `processed` INT 0,
     PRIMARY KEY (`sm_id`),
     FOREIGN KEY (`user_id`) REFERENCES `users`(`user_id`)
@@ -25,6 +26,7 @@ CREATE TABLE IF NOT EXISTS `received_mails` (
     `title` VARCHAR(30),
     `from` VARCHAR(30),
     `data_path` VARCHAR(150),
+    `size` INT 0 COMMENT 'size in bytes',
     `processed` INT 0,
     PRIMARY KEY (`rm_id`),
     FOREIGN KEY (`user_id`) REFERENCES `users`(`user_id`)

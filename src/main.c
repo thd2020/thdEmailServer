@@ -1,6 +1,7 @@
 #include "utils.h"
 #include "smtp_clt.h"
 #include "smtp_mx.h"
+#include "pop3.h"
 
 #define MAXBUFF 100
 
@@ -13,6 +14,9 @@ int main(int argc, char** argv){
     }
     if (!strcmp(argv[1],  "--start-smtp-mx") || !strcmp(argv[1],  "-sm")){
         start_smtp_mx(argv[0]);
+    }
+    if (!strcmp(argv[1],  "--start-pop3") || !strcmp(argv[1],  "-pop")){
+        start_pop3(argv[0]);
     }
     if (!strcmp(argv[1], "--base64-test") || !strcmp(argv[1],  "-bt")){
         unsigned char* origin = malloc(MAXBUFF * sizeof(unsigned char));

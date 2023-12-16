@@ -14,7 +14,7 @@ int start_smtp_mx(char* pname){
 	char* query = (char*)malloc(SHORTBUF_SIZE);
 	int sent_mails[SHORTBUF_SIZE];
 
-	int con_stat = init_mysql_con();
+	init_mysql_con();
 	sprintf(query, "SELECT `sm_id` FROM `sent_mails` WHERE `processed`=0");
 	if (mysql_query(con, query)){
 		syslog(LOG_WARNING, "parsing sql: %s failed", query);
