@@ -19,7 +19,6 @@
 #include <mysql/mysql.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include "utils.h"
 
 #define PORT			"2525"
 #define DOMAIN			"thd2020.site"

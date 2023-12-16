@@ -1,4 +1,5 @@
 #include "smtp_clt.h"
+#include "utils.h"
 
 /**Overall server sfd_state*/
 struct {
@@ -21,6 +22,7 @@ int start_smtp_clt(char* pname){
     openlog(syslog_buf, LOG_PERROR|LOG_PID, LOG_USER);
     /**open listening sockets for clients*/
     init_listen_socket();
+	init_mysql_con();
     while (1){
 		socklen_t clt_addr_size;
         /**init listen_sock fdset for select*/
@@ -97,6 +99,7 @@ void init_listen_socket(){
 		setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, 1, sizeof(int));
         /**bind listening socket*/
 		if (bind(listen_sock, p->ai_addr, p->ai_addrlen) == -1){
+			perror(&errno);
 			close(listen_sock);
 			syslog(LOG_NOTICE, "Failed to bind to IPv%d socket", \
 				(p->ai_family == AF_INET) ? 4 : 6 );
@@ -104,6 +107,7 @@ void init_listen_socket(){
 		}
         /**start listening*/
 		if (listen(listen_sock, BACKLOG_MAX) == -1) {
+			perror(&errno);
 			syslog(LOG_NOTICE, "Failed to listen to IPv%d socket", \
 				(p->ai_family == AF_INET) ? 4 : 6 );
 			exit(EXIT_FAILURE);
@@ -128,11 +132,20 @@ void init_listen_socket(){
  * handle client's smtp request
 */
 void* handle_clt_smtp(void* thread_arg){
+	char* smtp_host = (char*)malloc(30);
+	sprintf(smtp_host, "smtp.%s", DOMAIN);
     int sockfd = *(int*)thread_arg; /*connection socket fd*/
     char buffer[BUF_SIZE], bufferout[BUF_SIZE];
 	buffer[BUF_SIZE-1] = '\0';
 	int buffer_offset = 0;
+	int ubuf_offset = 0;
     int inmessage = 0;
+	char* ubuf = (char*)malloc(SHORTBUF_SIZE);
+	char* test_user = (char*)malloc(SHORTBUF_SIZE);
+	int user_id = 0;
+	char* username = (char*)malloc(SHORTBUF_SIZE);
+	char* userpass_base64 = (char*)malloc(SHORTBUF_SIZE);
+	char* query = (char*)malloc(BUF_SIZE);
     
     /**starting system log*/
     syslog(LOG_DEBUG, "Starting thread for socket #%d", sockfd);
@@ -147,16 +160,14 @@ void* handle_clt_smtp(void* thread_arg){
         tv.tv_usec = 0;
         fd_set conn_socks;
         int buffer_left = BUF_SIZE - buffer_offset - 1;
+		int ubuf_left = SHORTBUF_SIZE - ubuf_offset - 1;
         char* eol;
-		char* buf = (char*)malloc(SHORTBUF_SIZE);
-		char* username = (char*)malloc(SHORTBUF_SIZE);
-		char* userpass_base64 = (char*)malloc(SHORTBUF_SIZE);
-		char* query = (char*)malloc(BUF_SIZE);
-		int user_id = NULL;
+		char* ueol;
 
         FD_ZERO(&conn_socks);
         FD_SET(sockfd, &conn_socks);
         /**if time elasped by tv, then send something*/
+		receive:
         select(sockfd+1, &conn_socks, NULL, NULL, &tv);
         if (!FD_ISSET(sockfd, &conn_socks)){
 			syslog(LOG_DEBUG, "%d: Socket timed out", sockfd);
@@ -186,8 +197,7 @@ void* handle_clt_smtp(void* thread_arg){
         process_line:
         eol = strstr(buffer, "\r\n");
 		if (eol == NULL){
-			syslog(LOG_DEBUG, "%d: Haven't found EOL yet", sockfd);
-			continue;
+			goto receive;
 		}
         eol[0] = '\0';
         if (!inmessage){
@@ -198,70 +208,128 @@ void* handle_clt_smtp(void* thread_arg){
 					buffer[i] += 'A' - 'a';
 				}
 			}
-			// Null-terminate the verb for strcmp
-			buffer[4] = '\0';
-			/** Respond to each verb accordingly.
-			You should replace these with more meaningful
-			actions than simply printing everything.
-			*/
-			if (STREQU(buffer, "HELO")){ /*Initial greeting*/
-				sprintf(bufferout, "250 Ok\r\n");
-				printf("S%d: %s", sockfd, bufferout);
-				send(sockfd, bufferout, strlen(bufferout), 0);
+			/** Respond to each verb accordingly.*/
+			if (strstr(buffer, "HELO")-buffer==0 || strstr(buffer, "EHLO")-buffer==0){
+				char* format = malloc(50);
+				char* ehlo_format = malloc(50);
+				sprintf(format, "HELO %s", smtp_host);
+				sprintf(ehlo_format, "EHLO %s", smtp_host);
+				if (strstr(buffer, format)-buffer!=0 && strstr(buffer, ehlo_format)-buffer!=0){
+					sprintf(bufferout, "Wrong host!\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
+				}
+				else if (strstr(buffer, format)-buffer==0 || strstr(buffer, ehlo_format)-buffer==0){
+					sprintf(bufferout, "250 Ok\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
+				}
 			} else if (STREQU(buffer, "AUTH LOGIN")){
-				auth:
 				sprintf(bufferout, "334 VXNlcm5hbWU6\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
-				if (cmd_len = recv(sockfd, buf, buffer_left, 0) == -1){
+				memset(ubuf, 0, sizeof(ubuf));
+				ubuf_offset = 0;
+				recv_user:
+				cmd_len = recv(sockfd, ubuf + ubuf_offset, ubuf_left, 0);
+				if (cmd_len <= 0){
 					syslog(LOG_WARNING, "receive username failed");
 					goto fallback;
 				}
-				buf = base64_decode(buf);
-				sprintf(query, "SELECT user_id, user_pass FROM users WHERE user_name = %s", buf);
-				if (!mysql_query(con, query)){
+				ubuf_offset += cmd_len;
+				ueol = strstr(ubuf, "\r\n");
+				if (ueol == NULL){
+					goto recv_user;
+				}
+				ubuf[strlen(ubuf) - 1] = '\0';
+				ubuf[strlen(ubuf) - 1] = '\0';
+				test_user = (char*)base64_decode(ubuf);
+				sprintf(query, "SELECT `user_id`, `username`, `password` FROM `users` WHERE `username` = '%s'", test_user);
+				if (mysql_query(con, query)){
 					syslog(LOG_WARNING, "parsing sql: %s failed", query);
 					goto fallback;
 				}
 				MYSQL_RES* res = mysql_store_result(con);
-				MYSQL_ROW row;
 				if (res == NULL){
 					syslog(LOG_WARNING, "store mysql result failed");
 					goto fallback;
 				}
+				MYSQL_ROW row;
 				if ((row = mysql_fetch_row(res)) != NULL){
-					user_id = row[0];
-					username = buf;
-					userpass_base64 = row[1];
+					user_id = atoi(row[0]);
+					username = row[1];
+					userpass_base64 = row[2];
 				} else {
-					syslog(LOG_WARNING, "no such user");
+					syslog(LOG_WARNING, "no such user %s", test_user);
 					goto fallback;
 				}
 				sprintf(bufferout, "334 UGFzc3dvcmQ6\r\n");
 				printf("S%d: %s", sockfd, bufferout);
-				send(sockfd, bufferout, strlen(bufferout), 0); 
-				if (cmd_len = recv(sockfd, buf, buffer_left, 0) == -1){
+				send(sockfd, bufferout, strlen(bufferout), 0);
+				bzero(ubuf, strlen(ubuf));
+				ubuf_offset = 0;
+				recv_pass:
+				cmd_len = recv(sockfd, ubuf + ubuf_offset, ubuf_left, 0);
+				if (cmd_len <= 0){
 					syslog(LOG_WARNING, "receive userpass failed");
 					goto fallback;
 				}
-				if (buf != userpass_base64){
+				ubuf_offset += cmd_len;
+				ueol = strstr(ubuf, "\r\n");
+				if (ueol == NULL){
+					goto recv_pass;
+				}
+				ubuf[strlen(ubuf) - 1] = '\0';
+				ubuf[strlen(ubuf) - 1] = '\0';
+				if (!STREQU(ubuf, userpass_base64)){
 					syslog(LOG_WARNING, "userpass incorrect or not match");
+					goto fallback;
+				}
+				else if (STREQU(ubuf, userpass_base64)){
+					sprintf(bufferout, "Authentication successful\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
+				}
+				else {
+					fallback:
 					user_id = NULL;
 					username = NULL;
 					userpass_base64 = NULL;
-					goto fallback;
-				}
-				else if (buf == userpass_base64){
-					sprintf(bufferout, "Authentication successful\r\n");
+					sprintf(bufferout, "Something went wrong, try again\r\n");
 					printf("S%d: %s", sockfd, bufferout);
-					send(sockfd, bufferout, strlen(bufferout), 0); 
+					send(sockfd, bufferout, strlen(bufferout), 0);
 				}
-			} else if (STREQU(buffer, "MAIL FROM")){ /*New mail from*/
-				sprintf(bufferout, user_id == NULL?"Need Authentication First\r\n":"250 Ok\r\n");
-				printf("S%d: %s", sockfd, bufferout);
-				send(sockfd, bufferout, strlen(bufferout), 0);
-			} else if (STREQU(buffer, "RCPT TO")){ /*Mail addressed to...*/
-				sprintf(bufferout, user_id == NULL?"Need Authentication First":"250 Ok recipient\r\n");
+			} else if (strstr(buffer, "MAIL FROM")-buffer==0){ /*New mail from*/
+				if (user_id == NULL){
+					sprintf(bufferout, "Need Authentication First\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
+				}
+				else if (user_id != NULL){
+					char* format = malloc(50);
+					sprintf(format, "MAIL FROM:<%s@%s>", username, DOMAIN);
+					if (strstr(buffer, format)-buffer!=0){
+						sprintf(bufferout, "Username not match\r\n");
+						printf("S%d: %s", sockfd, bufferout);
+						send(sockfd, bufferout, strlen(bufferout), 0);
+					}
+					else{
+						sprintf(query, "INSERT INTO `sent_mails` (`user_id`) VALUES (%d)", user_id);
+						if (mysql_query(con, query)){
+							syslog(LOG_WARNING, "parsing sql: %s failed", query);
+							sprintf(bufferout, "sql insert error\r\n");
+							printf("S%d: %s", sockfd, bufferout);
+							send(sockfd, bufferout, strlen(bufferout), 0);
+						}
+						else{
+							sprintf(bufferout, "250 Mail OK\r\n");
+							printf("S%d: %s", sockfd, bufferout);
+							send(sockfd, bufferout, strlen(bufferout), 0);
+						}
+					}
+				}
+			} else if (strstr(buffer, "RCPT TO")-buffer==0){ /*Mail addressed to...*/
+				sprintf(bufferout, user_id == NULL?"Need Authentication First\r\n":"250 Ok recipient\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
 			} else if (STREQU(buffer, "DATA")){ /*Message contents...*/
@@ -283,7 +351,6 @@ void* handle_clt_smtp(void* thread_arg){
 				send(sockfd, bufferout, strlen(bufferout), 0);
 				break;
 			} else { /*The verb used hasn't been implemented.*/
-				fallback:
 				sprintf(bufferout, "502 Command Not Implemented\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);

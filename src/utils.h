@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <syslog.h>
+#include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <mysql/mysql.h>
@@ -17,7 +18,9 @@
 /**基础路径**/
 #define BASE_PATH "/var/thdEmail/users"
 /**用户名长度**/
-#define USERNAME_LENGTH 30
+#define USERNAME_LEN 30
+
+extern MYSQL* con;
 
 /**BASE64编码函数**/
 unsigned char* base64_encode(unsigned char* str);
@@ -26,6 +29,6 @@ unsigned char* base64_decode(unsigned char* code);
 /**初始化数据库链接**/
 int init_mysql_con();
 /**用户注册**/
-int register_user(char* username, char* userpass); 
+int register_user(char* username, char* userpass);
 
 #endif /* UTILS_H */

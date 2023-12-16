@@ -1,7 +1,6 @@
 #include "utils.h"
 
-/**mysql connection handler**/
-extern MYSQL* con = NULL;
+MYSQL* con = NULL;
 
 /**
  * BASE64编码函数
@@ -9,9 +8,9 @@ extern MYSQL* con = NULL;
 unsigned char* base64_encode(unsigned char* str)  {  
     /**变量声明*/
     int i, j;
-    size_t len;  /*目标编码长度*/
-    size_t str_len;  /*原始字串长度*/
-    unsigned char* res;  /*目标BASE64编码*/
+    long len;  /*目标编码长度*/
+    long str_len;  /*原始字串长度*/
+    unsigned char* res = malloc(BUFSIZ);  /*目标BASE64编码*/
     unsigned char* base64_table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"; /* The Base64 Alphabet*/
   
     /**初始化目标编码*/
@@ -67,9 +66,9 @@ unsigned char *base64_decode(unsigned char *code)  {
         36,37,38,39,40,41,42,43,44,
         45,46,47,48,49,50,51
     };  
-    size_t len;  /*源码长度*/
-    size_t str_len; /*解码长度*/ 
-    unsigned char* res;  /*解码*/
+    long len;  /*源码长度*/
+    long str_len; /*解码长度*/ 
+    unsigned char* res = malloc(BUFSIZ);  /*解码*/
     
     /**根据'='数量初始化解码*/  
     len = strlen(code);  
@@ -98,7 +97,7 @@ unsigned char *base64_decode(unsigned char *code)  {
 int init_mysql_con(){
     con = mysql_init(NULL);
 	/**connect to mysql*/
-	if (mysql_real_connect(con, "localhost", mysql_user, mysql_pass, "smtp_server", 0, NULL, 0) == NULL){
+	if (!mysql_real_connect(con, "localhost", mysql_user, mysql_pass, "smtp_server", 0, NULL, 0)){
 		perror("mysql connection failed");
 		mysql_close(con);
 		exit(EXIT_FAILURE);
@@ -110,30 +109,51 @@ int init_mysql_con(){
 */
 int register_user(char* username, char* userpass){
     char* query = (char*)malloc(BUFSIZ);
-    char path[512];
+    char* path = malloc(128);
+    char* sdpath = malloc(128);
+    char* rcpath = malloc(128);
+    init_mysql_con();
 
     /**检查用户名是否为空**/
-    if (strlen(username) == 0 || strlen(username) > USERNAME_LENGTH){
-    printf("Invalid username!\n");
-    return -1;
+    if (strlen(username) == 0 || strlen(username) > USERNAME_LEN){
+        printf("Invalid username!\n");
+        return -1;
     }
     /**构建邮箱文件夹路径**/
-    snprintf(path, sizeof(path), "%s/%s", BASE_PATH, username);
-    sprintf(query, "INSERT INTO 'users' values ('Cardinal', %s, %s, %s)", username, base64_encode(userpass), path);
-    /**创建目录**/
+    sprintf(path, "%s/%s", BASE_PATH, username);
+    sprintf(sdpath, "%s/%s/sentmails", BASE_PATH, username);
+    sprintf(rcpath, "%s/%s/rcmails", BASE_PATH, username);
     struct stat st = {0};
-    /**文件夹存在性检查**/
     if (stat(path, &st) != -1){
         printf("This user already exists!\n");
         return -1;
     }
-    /**尝试创建文件夹**/
-    if (mkdir(path, S_IRWXU) != 0){
-        perror("Error in mkdir");
+    sprintf(query, "INSERT INTO `users` (`username`, `password`, `path`) VALUES ('%s', '%s', '%s')", username, (char*)base64_encode(userpass), path);
+    if (mysql_query(con, query)){
+        syslog(LOG_WARNING, "parsing sql: %s failed", query);
         return -1;
     }
-    if (!mysql_query(con, query)){
-        syslog(LOG_WARNING, "parsing sql: %s failed", query);
+    /**创建目录**/
+    if (stat("/var/thdEmail", &st) == -1){
+        mkdir("/var/thdEmail", S_IRWXG);
+    }
+    if (stat(BASE_PATH, &st) == -1){
+        mkdir(BASE_PATH, S_IRWXG);
+    }
+    /**尝试创建文件夹**/
+    if (mkdir(path, S_IRWXU) != 0){
+        printf("Error in mkdir %s", path);
+        syslog(LOG_WARNING, "Error in mkdir %s", path);
+        return -1;
+    }
+    if (mkdir(sdpath, S_IRWXU) != 0){
+        printf("Error in mkdir %s", path);
+        syslog(LOG_WARNING, "Error in mkdir %s", path);
+        return -1;
+    }
+    if (mkdir(rcpath, S_IRWXU) != 0){
+        printf("Error in mkdir %s", path);
+        syslog(LOG_WARNING, "Error in mkdir %s", path);
         return -1;
     }
     printf("User registered and mailbox created successfully!\n");
