@@ -10,9 +10,10 @@ CREATE TABLE IF NOT EXISTS `users` (
 CREATE TABLE IF NOT EXISTS `sent_mails` (
     `sm_id` INT AUTO_INCREMENT,
     `user_id` INT NOT NULL,
+    `time` DATETIME,
     `title` VARCHAR(30),
     `rcpt` VARCHAR(30) COMMENT 'recipient',
-    `data_path` VARCHAR(50),
+    `data_path` VARCHAR(150),
     `processed` INT 0,
     PRIMARY KEY (`sm_id`),
     FOREIGN KEY (`user_id`) REFERENCES `users`(`user_id`)
@@ -20,9 +21,10 @@ CREATE TABLE IF NOT EXISTS `sent_mails` (
 CREATE TABLE IF NOT EXISTS `received_mails` (
     `rm_id` INT AUTO_INCREMENT,
     `user_id` INT NOT NULL,
+    `time` DATETIME,
     `title` VARCHAR(30),
     `from` VARCHAR(30),
-    `data_path` VARCHAR(50),
+    `data_path` VARCHAR(150),
     `processed` INT 0,
     PRIMARY KEY (`rm_id`),
     FOREIGN KEY (`user_id`) REFERENCES `users`(`user_id`)

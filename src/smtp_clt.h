@@ -10,6 +10,7 @@
 #include <syslog.h>
 #include <unistd.h>
 #include <time.h>
+#include <regex.h>
 #include <netdb.h>
 #include <pthread.h>
 #include <sys/socket.h>
@@ -25,7 +26,7 @@
 #define BACKLOG_MAX		(10)
 #define LOG_BUF_SIZE	1024
 #define BUF_SIZE		4096
-#define SHORTBUF_SIZE	512
+#define SHORTBUF_SIZE	128
 #define STREQU(a,b)		(strcmp(a, b) == 0)
 
 /**Sockets file descriptors*/

@@ -64,6 +64,7 @@ void init_listen_socket(){
 	int listen_sock; /*listening soocket fd*/
 	struct addrinfo template; /*address template*/
     struct addrinfo* hostinfo,* p; /*addresses for localhost(ipv4, ipv6) and a pointer*/
+	int com=0, yes=0;
 
     /**Set up the template indicating all of localhost's sockets*/
 	memset(&template, 0, sizeof(template));
@@ -145,13 +146,19 @@ void* handle_clt_smtp(void* thread_arg){
 	int user_id = 0;
 	char* username = (char*)malloc(SHORTBUF_SIZE);
 	char* userpass_base64 = (char*)malloc(SHORTBUF_SIZE);
+	int sm_id = 0; /*current sending mail id*/
+	char* rcpt = (char*)malloc(SHORTBUF_SIZE); /*receipient email address*/
+	char* data_path = (char*)malloc(150); /*where to store sending mail*/
 	char* query = (char*)malloc(BUF_SIZE);
+	time_t cur = malloc(sizeof(time_t));
+	FILE* data = NULL; /*data file pointer*/
+	int data_lines = 0; /*line counter*/
     
     /**starting system log*/
     syslog(LOG_DEBUG, "Starting thread for socket #%d", sockfd);
     free(thread_arg);
     /**send welcome*/
-    sprintf(bufferout, "220 %s SMTP CCSMTP\r\n", state.domain);
+    sprintf(bufferout, "220 %s SMTP CCSMTP thdEmail Test Server\r\n", state.domain);
 	printf("%s", bufferout);
 	send(sockfd, bufferout, strlen(bufferout), 0);
     while (1){
@@ -292,52 +299,143 @@ void* handle_clt_smtp(void* thread_arg){
 				}
 				else {
 					fallback:
-					user_id = NULL;
-					username = NULL;
-					userpass_base64 = NULL;
+					user_id = 0;
+					bzero(username, strlen(username));
+					bzero(userpass_base64, strlen(userpass_base64));
 					sprintf(bufferout, "Something went wrong, try again\r\n");
 					printf("S%d: %s", sockfd, bufferout);
 					send(sockfd, bufferout, strlen(bufferout), 0);
 				}
 			} else if (strstr(buffer, "MAIL FROM")-buffer==0){ /*New mail from*/
-				if (user_id == NULL){
+				if (user_id == 0){
 					sprintf(bufferout, "Need Authentication First\r\n");
 					printf("S%d: %s", sockfd, bufferout);
 					send(sockfd, bufferout, strlen(bufferout), 0);
 				}
-				else if (user_id != NULL){
+				else if (user_id != 0){
 					char* format = malloc(50);
 					sprintf(format, "MAIL FROM:<%s@%s>", username, DOMAIN);
 					if (strstr(buffer, format)-buffer!=0){
 						sprintf(bufferout, "Username not match\r\n");
 						printf("S%d: %s", sockfd, bufferout);
 						send(sockfd, bufferout, strlen(bufferout), 0);
+						goto post_process;
 					}
-					else{
-						sprintf(query, "INSERT INTO `sent_mails` (`user_id`) VALUES (%d)", user_id);
-						if (mysql_query(con, query)){
-							syslog(LOG_WARNING, "parsing sql: %s failed", query);
-							sprintf(bufferout, "sql insert error\r\n");
-							printf("S%d: %s", sockfd, bufferout);
-							send(sockfd, bufferout, strlen(bufferout), 0);
-						}
-						else{
-							sprintf(bufferout, "250 Mail OK\r\n");
-							printf("S%d: %s", sockfd, bufferout);
-							send(sockfd, bufferout, strlen(bufferout), 0);
-						}
+					cur = time(NULL);
+					sprintf(query, "INSERT INTO `sent_mails` (`user_id`, `time`) VALUES (%d, FROM_UNIXTIME(%d))", user_id, cur);
+					if (mysql_query(con, query)){
+						syslog(LOG_WARNING, "parsing sql: %s failed", query);
+						sprintf(bufferout, "sql insert error\r\n");
+						printf("S%d: %s", sockfd, bufferout);
+						send(sockfd, bufferout, strlen(bufferout), 0);
+						goto post_process;
 					}
+					sprintf(query, "SELECT `sm_id` FROM `sent_mails` WHERE UNIX_TIMESTAMP(`time`)=%d", cur);
+					if (mysql_query(con, query)){
+						syslog(LOG_WARNING, "parsing sql: %s failed", query);
+						sprintf(bufferout, "sql select error\r\n");
+						printf("S%d: %s", sockfd, bufferout);
+						send(sockfd, bufferout, strlen(bufferout), 0);
+						goto post_process;
+					}
+					MYSQL_RES* res = mysql_store_result(con);
+					if (res == NULL){
+						syslog(LOG_WARNING, "store mysql result failed");
+						goto post_process;
+					}
+					MYSQL_ROW row;
+					if ((row = mysql_fetch_row(res)) != NULL){
+						sm_id = atoi(row[0]);
+					}
+					sprintf(bufferout, "250 Mail OK\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
 				}
 			} else if (strstr(buffer, "RCPT TO")-buffer==0){ /*Mail addressed to...*/
-				sprintf(bufferout, user_id == NULL?"Need Authentication First\r\n":"250 Ok recipient\r\n");
+				if (user_id == 0){
+					sprintf(bufferout, "Need Authentication First\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
+					goto post_process;
+				}
+				if (sm_id == 0){
+					sprintf(bufferout, "Need MAIL FROM First\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
+					goto post_process;
+				}
+				regex_t format;
+				regcomp(&format, "^RCPT TO:<\\w+([-+.]\\w+)*@\\w+([-.]\\w+)*.\\w+([-.]\\w+)*>*$", REG_EXTENDED);
+				if (regexec(&format, buffer, 0, NULL, 0)){
+					sprintf(bufferout, "RCPT format not match\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
+					goto post_process;
+				}
+				sscanf(buffer, "RCPT TO:<%50[^>]>", rcpt);
+				struct tm* tf = gmtime(&cur);
+				char* date = malloc(30);
+				sprintf(date, "%d-%02d-%02d", tf->tm_year+1900, tf->tm_mon+1, tf->tm_mday);
+				sprintf(data_path, "%s/%s/sentmails/%s_%s_%d.bin", BASE_PATH, username, rcpt, date, sm_id);
+				FILE* temp = fopen(data_path, "w");
+				fclose(temp);
+				sprintf(query, "UPDATE `sent_mails` SET `rcpt`='%s', `data_path`='%s' WHERE `sm_id`=%d", rcpt, data_path, sm_id);
+				if (mysql_query(con, query)){
+					syslog(LOG_WARNING, "parsing sql: %s failed", query);
+					sprintf(bufferout, "sql update error\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
+					goto post_process;
+				}
+				sprintf(bufferout, "250 Mail OK\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
 			} else if (STREQU(buffer, "DATA")){ /*Message contents...*/
-				sprintf(bufferout, user_id == NULL?"Need Authentication First\r\n":"354 Continue\r\n");
+				if (user_id == 0){
+					sprintf(bufferout, "Need Authentication First\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
+					goto post_process;
+				}
+				if (sm_id == 0){
+					sprintf(bufferout, "Need MAIL FROM First\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
+					goto post_process;
+				}
+				if (rcpt == 0){
+					sprintf(bufferout, "Need RCPT TO First\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
+					goto post_process;
+				}
+				sprintf(bufferout, "354 End data with <CR><LF>.<CR><LF>\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
 				inmessage = 1;
+				data = fopen(data_path, "w");
 			} else if (STREQU(buffer, "RSET")){ /*Reset the connection*/
+				if (sm_id != 0){
+					sprintf(query, "DELETE FROM `sent_mails` WHERE `sm_id`=%d", sm_id);
+					if (mysql_query(con, query)){
+					syslog(LOG_WARNING, "parsing sql: %s failed", query);
+					sprintf(bufferout, "sql update error\r\n");
+					printf("S%d: %s", sockfd, bufferout);
+					send(sockfd, bufferout, strlen(bufferout), 0);
+					goto post_process;
+					}
+				}
+				user_id = 0;
+				sm_id = 0;
+				data_lines = 0;
+				bzero(username, strlen(username));
+				bzero(userpass_base64, strlen(userpass_base64));
+				bzero(rcpt, strlen(rcpt));
+				struct stat st = {0};
+				if (stat(data_path, &st) != -1){
+					remove(data_path);
+				}
+				bzero(data_path, strlen(data_path));
 				sprintf(bufferout, "250 Ok reset\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
@@ -356,14 +454,34 @@ void* handle_clt_smtp(void* thread_arg){
 				send(sockfd, bufferout, strlen(bufferout), 0);
 			}
 		} else { /*We are inside the message after a DATA verb.*/
+			data_lines++;
+			fputs(buffer, data);
+			fputc('\n', data);
 			printf("C%d: %s\n", sockfd, buffer);
+			if (data_lines==3 && strstr(buffer, "Subject:")-buffer==0){
+				char* subject = malloc(50);
+				sscanf(buffer, "Subject: %s", subject);
+				sprintf(query, "UPDATE `sent_mails` SET `title`='%s' WHERE `sm_id`=%d", subject, sm_id);
+				if (mysql_query(con, query)){
+					syslog(LOG_WARNING, "parsing sql: %s failed", query);
+				}
+			}
+			else if (data_lines==3){
+				char* subject = malloc(50);
+				sprintf(query, "UPDATE `sent_mails` SET `title`='%s' WHERE `sm_id`=%d", buffer, sm_id);
+				if (mysql_query(con, query)){
+					syslog(LOG_WARNING, "parsing sql: %s failed", query);
+				}
+			}
 			if (STREQU(buffer, ".")) { // A single "." signifies the end
-				sprintf(bufferout, "250 Ok\r\n");
+				fclose(data);
+				sprintf(bufferout, "250 Mail Ok queued as\r\n");
 				printf("S%d: %s", sockfd, bufferout);
 				send(sockfd, bufferout, strlen(bufferout), 0);
 				inmessage = 0;
 			}
         }
+		post_process:
         /**Shift the rest of the buffer to the front*/
 		memmove(buffer, eol+2, BUF_SIZE - (eol + 2 - buffer));
 		buffer_offset -= (eol - buffer) + 2;
